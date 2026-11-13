@@ -1,6 +1,6 @@
 """协议 v0 的 WebSocket 服务（aiohttp）。不依赖 SDK：和 MaiBot 打交道的部分由 plugin.py 通过回调注入。
 
-一条连接的流程（docs/PROTOCOL.md §3–§5）：
+一条连接的流程（PROTOCOL.md §3–§5）：
 1. 等第一帧，必须是 hello（超时、二进制帧、不是 hello → 4000）；
 2. 比对协议版本（→ 4002）和 token（→ 4001）；
 3. 顶替已有的设备（旧连接收到 error replaced 后以 4003 关闭）；

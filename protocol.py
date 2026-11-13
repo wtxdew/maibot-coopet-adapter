@@ -1,4 +1,4 @@
-"""协议 v0 的常量、解析与组帧（docs/PROTOCOL.md）。不依赖网络和 SDK，纯函数。"""
+"""协议 v0 的常量、解析与组帧（PROTOCOL.md）。不依赖网络和 SDK，纯函数。"""
 
 from __future__ import annotations
 
