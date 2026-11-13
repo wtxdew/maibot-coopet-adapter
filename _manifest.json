@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "id": "wtxdew.coopet-adapter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "name": "Coopet 桌宠适配器",
   "description": "让 Coopet 桌宠客户端连上 MaiBot：自起 WebSocket 服务，经消息网关收发主人的私聊消息，并推送思考状态。",
   "author": {"name": "wtxdew", "url": "https://github.com/wtxdew"},
@@ -18,6 +18,6 @@
   "dependencies": [
     {"type": "python_package", "name": "aiohttp", "version_spec": ">=3.14,<4"}
   ],
-  "capabilities": ["chat.get_all_streams", "config.get"],
+  "capabilities": ["chat.get_all_streams", "config.get", "gateway.route_message", "gateway.update_state"],
   "i18n": {"default_locale": "zh-CN", "supported_locales": ["zh-CN"]}
 }
