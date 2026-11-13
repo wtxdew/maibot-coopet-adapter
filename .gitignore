@@ -1,3 +1,5 @@
 .venv/
 __pycache__/
 .pytest_cache/
+# MaiBot 运行时在插件目录生成的配置（含 token），不进版本库
+config.toml
