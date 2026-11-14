@@ -11,3 +11,6 @@ token = ""
 bot_account_id = "coopet-maibot"
 owner_user_id = "owner"
 owner_nickname = "主人"
+
+[reply]
+no_split = "notice"

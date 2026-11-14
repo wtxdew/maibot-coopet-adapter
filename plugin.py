@@ -25,6 +25,8 @@ GATEWAY_NAME = "coopet_gateway"
 GATEWAY_PROTOCOL = "coopet_ws_v0"
 DEFAULT_BOT_NAME = "MaiBot"
 CONTINUE: Dict[str, Any] = {"action": "continue"}
+# 交给麦麦一条通知后，主人的 coopet 私聊里这段时间内的下一次回复算作转告通知的回复（回复设置 no_split = notice 时不分句）
+NOTICE_REPLY_WINDOW_SEC = 90.0
 
 
 class CoopetAdapterPlugin(MaiBotPlugin):
@@ -37,6 +39,8 @@ class CoopetAdapterPlugin(MaiBotPlugin):
         self._lifecycle_lock = asyncio.Lock()
         self._owner_session: Optional[str] = None
         self._thinking_timer: Optional[asyncio.TimerHandle] = None
+        # 最近一次交给麦麦的通知之后、多久以内的下一次回复算作转告通知（time.monotonic）；0 表示没有在等
+        self._notice_reply_until = 0.0
 
     # ---------- 生命周期 ----------
 
@@ -140,18 +144,22 @@ class CoopetAdapterPlugin(MaiBotPlugin):
                 if isinstance(result, dict) and result.get("success") is False:
                     raise RuntimeError(str(result.get("error") or "宿主没有接受"))
                 self.ctx.logger.info("Coopet 通知作为主动任务交给 MaiBot：%s", notice.source)
+                self._notice_reply_until = time.monotonic() + NOTICE_REPLY_WINDOW_SEC
                 return None
             except Exception as exc:
                 self.ctx.logger.warning("Coopet 通知没能作为主动任务交给 MaiBot（%s），改成通知消息", exc)
         identity = self.config.identity
         self.ctx.logger.info("Coopet 通知作为通知消息交给 MaiBot：%s", notice.source)
-        return await self._route(notice.id, lambda now: notice_to_inbound(
+        result = await self._route(notice.id, lambda now: notice_to_inbound(
             notice,
             account_id=identity.bot_account_id,
             user_id=identity.owner_user_id,
             user_nickname=identity.owner_nickname,
             now=now,
         ))
+        if result is None:
+            self._notice_reply_until = time.monotonic() + NOTICE_REPLY_WINDOW_SEC
+        return result
 
     async def _route(self, message_id: str, build: Callable[[float], Dict[str, Any]]) -> ChatResult:
         """经消息网关交给 MaiBot；用客户端的 id 去重。"""
@@ -220,6 +228,32 @@ class CoopetAdapterPlugin(MaiBotPlugin):
             return {"success": False, "error": "桌宠没有连上"}
         await self._set_thinking(False)
         return {"success": True}
+
+    # ---------- 回复分句 ----------
+
+    @HookHandler(
+        "maisaka.reply.before_post_process",
+        name="coopet_no_split",
+        description="主人的 coopet 私聊里，转告通知的回复（或按设置全部回复）整段发，不按全局设置分句",
+        mode=HookMode.BLOCKING,
+        timeout_ms=3000,
+    )
+    async def on_reply_post_process(self, **kwargs: Any) -> Dict[str, Any]:
+        if not await self._should_skip_split(str(kwargs.get("session_id") or "")):
+            return CONTINUE
+        return {"action": "continue", "modified_kwargs": {**kwargs, "enable_splitter": False}}
+
+    async def _should_skip_split(self, session_id: str) -> bool:
+        """这次回复要不要整段发：只看主人的 coopet 私聊；notice 时只算交给通知后窗口内的那一次（用掉就清掉）。"""
+        mode = self.config.reply.no_split
+        if mode == "off" or not await self._is_owner_session(session_id):
+            return False
+        if mode == "all":
+            return True
+        if self._notice_reply_until and time.monotonic() <= self._notice_reply_until:
+            self._notice_reply_until = 0.0
+            return True
+        return False
 
     # ---------- 思考状态 ----------
 

@@ -1,6 +1,6 @@
 """插件配置模型；在 MaiBot WebUI 的插件设置页修改。"""
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from maibot_sdk import Field, PluginConfigBase
 
@@ -39,7 +39,21 @@ class IdentitySettings(PluginConfigBase):
     owner_nickname: str = Field(default="主人", description="麦麦怎么称呼主人")
 
 
+class ReplySettings(PluginConfigBase):
+    __ui_label__: ClassVar[str] = "回复"
+    __ui_order__: ClassVar[int] = 3
+
+    no_split: Literal["notice", "all", "off"] = Field(
+        default="notice",
+        description=(
+            "麦麦在 Coopet 里的回复要不要整段发、不按全局设置分句：notice 只有转告通知的那次回复不分句（通知不会被拆散），"
+            "all Coopet 里的回复都不分句，off 照全局设置。只影响主人的 coopet 私聊，其他平台不变"
+        ),
+    )
+
+
 class AdapterSettings(PluginConfigBase):
     plugin: PluginSettings = Field(default_factory=PluginSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
     identity: IdentitySettings = Field(default_factory=IdentitySettings)
+    reply: ReplySettings = Field(default_factory=ReplySettings)
