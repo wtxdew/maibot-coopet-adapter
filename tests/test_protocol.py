@@ -61,13 +61,42 @@ class TestParseChat:
         assert e.value.code == p.ERR_INVALID and e.value.ack_id == "a"
 
 
+class TestNotice:
+    def test_parses_and_trims(self):
+        n = p.parse_notice({"type": "notice", "id": "n1", "source": " ntfy · build ", "title": " CI ", "text": " 构建完成 "})
+        assert n == p.Notice(id="n1", source="ntfy · build", text="构建完成", title="CI")
+
+    def test_title_is_optional(self):
+        assert p.parse_notice({"type": "notice", "id": "n1", "source": "s", "text": "t"}).title is None
+        assert p.parse_notice({"type": "notice", "id": "n1", "source": "s", "text": "t", "title": "  "}).title is None
+
+    @pytest.mark.parametrize("nid", [None, "", 3])
+    def test_bad_id_is_an_error_frame(self, nid):
+        with pytest.raises(p.ProtocolError) as e:
+            p.parse_notice({"type": "notice", "id": nid, "source": "s", "text": "t"})
+        assert e.value.code == p.ERR_INVALID and e.value.ack_id is None
+
+    @pytest.mark.parametrize("over", [
+        {"source": None}, {"source": "  "}, {"source": "x" * (p.MAX_NOTICE_SOURCE + 1)},
+        {"text": None}, {"text": ""}, {"text": "x" * (p.MAX_NOTICE_TEXT + 1)},
+        {"title": 5}, {"title": "x" * (p.MAX_NOTICE_TITLE + 1)},
+    ])
+    def test_bad_fields_ack(self, over):
+        frame = {"type": "notice", "id": "n1", "source": "s", "text": "t", **over}
+        with pytest.raises(p.ProtocolError) as e:
+            p.parse_notice(frame)
+        assert e.value.code == p.ERR_INVALID and e.value.ack_id == "n1"
+
+
 class TestFrames:
     def test_welcome(self):
         assert p.welcome(bot_name="麦麦", bot_account_id="coopet-maibot", user_id="owner", user_nickname="主人") == {
             "type": "welcome", "protocol": 0,
             "bot": {"name": "麦麦", "account_id": "coopet-maibot"},
             "user": {"id": "owner", "nickname": "主人"},
+            "features": [],
         }
+        assert p.welcome(bot_name="麦麦", bot_account_id="a", user_id="o", user_nickname="n", features=[p.FEATURE_NOTICE])["features"] == ["notice"]
 
     def test_ack_reply_thinking_error(self):
         assert p.ack_ok("a") == {"type": "ack", "id": "a", "ok": True}
