@@ -333,3 +333,53 @@ async def test_config_update_restarts_the_server():
         assert [s[1] for s in ctx.gateway.states] == [True, False, True]
     finally:
         await plugin.on_unload()
+
+
+def post_process_kwargs(session_id="s-owner"):
+    return {"response": "主人，GitHub 打包挂了", "session_id": session_id, "reply_message_id": "m1", "reply_tool_args": {},
+            "skip_post_process": False, "enable_splitter": True, "enable_chinese_typo": True}
+
+
+async def test_the_reply_after_a_notice_is_not_split():
+    plugin, ctx, port = make_plugin()
+    await plugin.on_load()
+    try:
+        assert await plugin.on_reply_post_process(**post_process_kwargs()) == plugin_mod.CONTINUE
+        async with Client(port) as c:
+            await c.notice("n1", "ntfy", "构建完成")
+        result = await plugin.on_reply_post_process(**post_process_kwargs())
+        assert result["modified_kwargs"] == {**post_process_kwargs(), "enable_splitter": False}
+        # only the one reply after the notice; other chats and later replies are split as usual
+        assert await plugin.on_reply_post_process(**post_process_kwargs()) == plugin_mod.CONTINUE
+        async with Client(port) as c:
+            await c.notice("n2", "ntfy", "构建完成")
+        assert await plugin.on_reply_post_process(**post_process_kwargs("s-qq")) == plugin_mod.CONTINUE
+    finally:
+        await plugin.on_unload()
+
+
+async def test_the_notice_window_runs_out(monkeypatch):
+    plugin, ctx, port = make_plugin()
+    await plugin.on_load()
+    try:
+        async with Client(port) as c:
+            await c.notice("n1", "ntfy", "构建完成")
+        later = plugin_mod.time.monotonic() + plugin_mod.NOTICE_REPLY_WINDOW_SEC + 1
+        monkeypatch.setattr(plugin_mod.time, "monotonic", lambda: later)
+        assert await plugin.on_reply_post_process(**post_process_kwargs()) == plugin_mod.CONTINUE
+    finally:
+        await plugin.on_unload()
+
+
+@pytest.mark.parametrize("mode,expect_split", [("all", False), ("off", True)])
+async def test_no_split_setting(mode, expect_split):
+    plugin, ctx, port = make_plugin()
+    plugin.set_plugin_config({**plugin.config.model_dump(), "reply": {"no_split": mode}})
+    await plugin.on_load()
+    try:
+        async with Client(port) as c:
+            await c.notice("n1", "ntfy", "构建完成")
+        result = await plugin.on_reply_post_process(**post_process_kwargs())
+        assert (result == plugin_mod.CONTINUE) is expect_split
+    finally:
+        await plugin.on_unload()
