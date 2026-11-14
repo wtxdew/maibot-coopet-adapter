@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "id": "wtxdew.coopet-adapter",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "name": "Coopet 桌宠适配器",
   "description": "让 Coopet 桌宠客户端连上 MaiBot：自起 WebSocket 服务，经消息网关收发主人的私聊消息，并推送思考状态。",
   "author": {"name": "wtxdew", "url": "https://github.com/wtxdew"},
