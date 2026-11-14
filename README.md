@@ -20,9 +20,11 @@ Coopet 是一个 Mac / Windows 的桌宠客户端。它基于 [Coopanion](https:
 - **可以扩展**：桌宠端能加载 [Cortico](https://github.com/Pal-AI-Lab/Cortico) 格式的 **World 扩展**，
   给桌宠接上新的本地能力。内置一个 Coding Agent 完成通知（来自
   [ThermalEng/coopanion-agent-notify-world](https://github.com/ThermalEng/coopanion-agent-notify-world)）：
-  Claude Code、Codex 等跑完一轮任务后，桌宠会告诉你。World 扩展就是一个 npm 包，可以自己写，
-  Coopet 用 Cortico 的契约加载和托管它。
-- **以后**：本地 Agent（对麦麦说"帮我打开某某"，由电脑上的 Agent 执行）、外部通知、电脑操作等，
+  Claude Code、Codex 等跑完一轮任务后，桌宠会告诉你；还内置 [ntfy 通知](https://github.com/wtxdew/cortico-world-ntfy)。
+  World 扩展就是一个 npm 包，可以自己写，Coopet 用 Cortico 的契约加载和托管它。
+- **通知可以交给麦麦**（插件 0.2.0 起）：扩展的通知设成「交给麦麦」时，桌宠把它转给 MaiBot，作为一条通知消息
+  （`[事件-通知] …`），由麦麦决定要不要说、怎么说，回复照常显示在桌宠气泡里。
+- **以后**：本地 Agent（对麦麦说"帮我打开某某"，由电脑上的 Agent 执行）、电脑操作等，
   见 Coopet 的 [ROADMAP](https://github.com/wtxdew/coopet-maibot/blob/master/docs/ROADMAP.md)。
 
 ```
