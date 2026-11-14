@@ -53,7 +53,8 @@ v0 只覆盖**单台设备的聊天**：握手、发消息、收回复、思考�
   "type": "welcome",
   "protocol": 0,
   "bot": { "name": "麦麦", "account_id": "coopet-maibot" },
-  "user": { "id": "owner", "nickname": "主人" }
+  "user": { "id": "owner", "nickname": "主人" },
+  "features": ["notice"]
 }
 ```
 
@@ -62,8 +63,9 @@ v0 只覆盖**单台设备的聊天**：握手、发消息、收回复、思考�
 | `bot.name` | MaiBot 设置里的 `bot.nickname`，客户端用它显示名字 |
 | `bot.account_id` | 麦麦在 coopet 平台上的账号（插件配置） |
 | `user` | 客户端在 MaiBot 里的身份（插件配置）。身份由插件决定，客户端不用自己配 |
+| `features` | 服务端支持的可选消息。现在只有 `notice`（第 4 节）。客户端只发列在这里的可选消息；没有这个字段（插件 0.1.x）按空列表处理 |
 
-收到 `welcome` 才算连上，之后才能发 `chat`。
+收到 `welcome` 才算连上，之后才能发 `chat`（和 `features` 里列出的可选消息）。
 
 ### 握手失败
 
@@ -137,6 +139,28 @@ MaiBot 的 planner 可能决定不回。失败时的 `error.code` 见第 6 节�
   生成出正文时不在 after_response 就结束：MaiBot 还要模拟打字一段时间才发出，等回复真正到达桌宠再结束。
 - planner 决定不回复时 replyer 不会启动，所以**不会**收到 `on: true`。
 
+### `notice`（客户端 → 服务端）：转给麦麦的通知
+
+`welcome.features` 里有 `notice` 时才发（插件 0.2.0 起）。桌宠收到 World 扩展的通知（例如 ntfy、Coding Agent 跑完了），
+而这个扩展的通知设成「交给麦麦」时，把它转给 MaiBot，由麦麦决定要不要说、怎么说。
+
+```json
+{ "type": "notice", "id": "6f9619ff-…", "source": "ntfy · build", "title": "CI", "text": "构建完成" }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `source` | 必填，通知从哪来（扩展名，可以带分类），最多 64 字 |
+| `title` | 可选，通知的标题，最多 200 字 |
+| `text` | 必填，通知内容，最多 2000 字 |
+
+三个字段都去掉首尾空白后再检查；`title` 为空当作没有。服务端把它当作主人（`welcome.user`）在 coopet 平台私聊里的一条
+**通知消息**（`is_notify: true`）交给 MaiBot，正文照 MaiBot 通知消息的写法：`[事件-通知] ntfy · build：CI：构建完成`。
+
+- 和 `chat` 一样回 `ack`（`id` 相同）。`ok: true` 只表示 MaiBot 收下了：planner 可能决定不回，这很正常。
+- 麦麦决定回复时，照常先有 `thinking`，再有 `reply`。
+- MaiBot 恢复对话上下文时会跳过通知消息，所以通知不会挤占聊天记录，麦麦过后也不一定记得。
+
 ## 5. 关闭
 
 | 关闭码 | 谁发 | 含义 | 客户端是否自动重连 |
@@ -166,7 +190,7 @@ MaiBot 的 planner 可能决定不回。失败时的 `error.code` 见第 6 节�
 | `unauthorized` | `error` | token 不对 |
 | `protocol_unsupported` | `error` | 协议版本不支持 |
 | `replaced` | `error` | 被新设备顶替 |
-| `invalid` | `error` 或 `ack.error` | 消息格式不对（`chat` 格式不对时回 `ack`，其他情况回 `error`，不断开） |
+| `invalid` | `error` 或 `ack.error` | 消息格式不对（`chat`、`notice` 的 id 合格而其他字段不对时回 `ack`，其他情况回 `error`，不断开） |
 | `not_ready` | `ack.error` | 插件的消息网关还没就绪 |
 | `rejected` | `ack.error` | MaiBot 没有收下这条消息 |
 

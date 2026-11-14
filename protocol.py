@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 PROTOCOL_VERSION = 0
 
@@ -14,6 +14,13 @@ MAX_FRAME_BYTES = 16 * 1024 * 1024
 HELLO_TIMEOUT_SEC = 10.0
 # 思考状态的兜底超时（§4）
 THINKING_TIMEOUT_SEC = 120.0
+
+# 服务端支持的可选消息，写在 welcome.features 里（§3）；客户端看到才发
+FEATURE_NOTICE = "notice"
+# notice 各字段的长度上限（§4）
+MAX_NOTICE_SOURCE = 64
+MAX_NOTICE_TITLE = 200
+MAX_NOTICE_TEXT = 2000
 
 # 关闭码（§5）
 CLOSE_NORMAL = 1000
@@ -58,6 +65,15 @@ class Hello:
 class Chat:
     id: str
     text: str
+
+
+@dataclass(frozen=True)
+class Notice:
+    """桌宠转来的一条通知（例如 ntfy、Coding Agent 跑完了），交给 MaiBot 由她决定要不要说。"""
+    id: str
+    source: str
+    text: str
+    title: Optional[str] = None
 
 
 def parse_frame(raw: str) -> Dict[str, Any]:
@@ -108,14 +124,41 @@ def parse_chat(obj: Dict[str, Any]) -> Chat:
     return Chat(id=chat_id, text=text.strip())
 
 
+def parse_notice(obj: Dict[str, Any]) -> Notice:
+    """解析 notice。id 合格但其他字段不合格时，异常带 ack_id，好回 ack 失败。"""
+    notice_id = obj.get("id")
+    if not isinstance(notice_id, str) or not notice_id:
+        raise ProtocolError(ERR_INVALID, "notice.id 必须是非空字符串")
+
+    def text_field(key: str, limit: int, required: bool) -> Optional[str]:
+        value = obj.get(key)
+        if value is None and not required:
+            return None
+        if not isinstance(value, str) or (required and not value.strip()):
+            raise ProtocolError(ERR_INVALID, f"notice.{key} 必须是非空字符串", ack_id=notice_id)
+        value = value.strip()
+        if len(value) > limit:
+            raise ProtocolError(ERR_INVALID, f"notice.{key} 最多 {limit} 个字", ack_id=notice_id)
+        return value or None
+
+    source = text_field("source", MAX_NOTICE_SOURCE, True)
+    text = text_field("text", MAX_NOTICE_TEXT, True)
+    title = text_field("title", MAX_NOTICE_TITLE, False)
+    assert source is not None and text is not None
+    return Notice(id=notice_id, source=source, text=text, title=title)
+
+
 # ---------- 组帧（服务端 → 客户端） ----------
 
-def welcome(*, bot_name: str, bot_account_id: str, user_id: str, user_nickname: str) -> Dict[str, Any]:
+def welcome(
+    *, bot_name: str, bot_account_id: str, user_id: str, user_nickname: str, features: Sequence[str] = (),
+) -> Dict[str, Any]:
     return {
         "type": "welcome",
         "protocol": PROTOCOL_VERSION,
         "bot": {"name": bot_name, "account_id": bot_account_id},
         "user": {"id": user_id, "nickname": user_nickname},
+        "features": list(features),
     }
 
 
