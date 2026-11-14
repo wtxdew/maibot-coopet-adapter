@@ -103,6 +103,13 @@ class Client:
         await self.ws.send_str(json.dumps({"type": "chat", "id": chat_id, "text": text}))
         return await self.recv()
 
+    async def notice(self, notice_id, source, text, title=None):
+        frame = {"type": "notice", "id": notice_id, "source": source, "text": text}
+        if title is not None:
+            frame["title"] = title
+        await self.ws.send_str(json.dumps(frame))
+        return await self.recv()
+
 
 def outbound(text="辛苦啦", target="owner"):
     return {
@@ -118,7 +125,8 @@ async def test_load_reports_ready_and_welcome_carries_bot_name():
     try:
         assert ctx.gateway.states == [("coopet_gateway", True, "coopet", "coopet-maibot")]
         async with Client(port) as c:
-            assert c.welcome == p.welcome(bot_name="麦麦", bot_account_id="coopet-maibot", user_id="owner", user_nickname="主人")
+            assert c.welcome == p.welcome(bot_name="麦麦", bot_account_id="coopet-maibot", user_id="owner", user_nickname="主人",
+                                          features=[p.FEATURE_NOTICE])
     finally:
         await plugin.on_unload()
     assert ctx.gateway.states[-1] == ("coopet_gateway", False, "coopet", "coopet-maibot")
@@ -144,6 +152,32 @@ async def test_chat_is_routed_as_owner_private_message():
         assert (name, ext_id, dedupe) == ("coopet_gateway", "c1", "c1")
         assert message["message_info"]["user_info"] == {"user_id": "owner", "user_nickname": "主人"}
         assert message["raw_message"] == [{"type": "text", "data": "你好"}]
+    finally:
+        await plugin.on_unload()
+
+
+async def test_notice_is_routed_as_a_notify_message():
+    plugin, ctx, port = make_plugin()
+    await plugin.on_load()
+    try:
+        async with Client(port) as c:
+            assert await c.notice("n1", "ntfy · build", "构建完成", title="CI") == p.ack_ok("n1")
+        name, message, ext_id, dedupe = ctx.gateway.routed[0]
+        assert (name, ext_id, dedupe) == ("coopet_gateway", "n1", "n1")
+        assert message["is_notify"] is True
+        assert message["message_info"]["user_info"] == {"user_id": "owner", "user_nickname": "主人"}
+        assert message["raw_message"] == [{"type": "text", "data": "[事件-通知] ntfy · build：CI：构建完成"}]
+    finally:
+        await plugin.on_unload()
+
+
+async def test_notice_failures_are_acked():
+    plugin, _, port = make_plugin(gateway=FakeGateway(route_result=False))
+    await plugin.on_load()
+    try:
+        async with Client(port) as c:
+            ack = await c.notice("n1", "ntfy", "hi")
+            assert ack["ok"] is False and ack["error"]["code"] == p.ERR_REJECTED
     finally:
         await plugin.on_unload()
 

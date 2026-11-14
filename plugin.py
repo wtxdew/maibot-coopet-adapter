@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, ClassVar, Dict, List, Optional, Type
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type
 
 from maibot_sdk import HookHandler, MaiBotPlugin, MessageGateway, PluginConfigBase
 from maibot_sdk.types import HookMode
 
 from . import protocol as p
-from .codec import PLATFORM, chat_to_inbound, outbound_target_user, outbound_to_reply
+from .codec import PLATFORM, chat_to_inbound, notice_to_inbound, outbound_target_user, outbound_to_reply
 from .server import ChatResult, CoopetServer
 from .settings import AdapterSettings
 
@@ -71,6 +71,7 @@ class CoopetAdapterPlugin(MaiBotPlugin):
             port=server_cfg.port,
             token=server_cfg.token,
             on_chat=self._on_chat,
+            on_notice=self._on_notice,
             welcome_info=self._welcome_info,
             logger=self.ctx.logger,
         )
@@ -112,19 +113,35 @@ class CoopetAdapterPlugin(MaiBotPlugin):
     # ---------- 入站：桌宠 → MaiBot ----------
 
     async def _on_chat(self, chat: p.Chat) -> ChatResult:
-        if not self._ready:
-            return (p.ERR_NOT_READY, "插件的消息网关还没就绪")
         identity = self.config.identity
-        message = chat_to_inbound(
+        return await self._route(chat.id, lambda now: chat_to_inbound(
             chat,
             account_id=identity.bot_account_id,
             user_id=identity.owner_user_id,
             user_nickname=identity.owner_nickname,
-            now=time.time(),
-        )
+            now=now,
+        ))
+
+    async def _on_notice(self, notice: p.Notice) -> ChatResult:
+        """桌宠转来的通知（路由设成「麦麦」的扩展通知）：作为主人私聊里的通知消息交给 MaiBot，由她决定要不要回。"""
+        identity = self.config.identity
+        self.ctx.logger.info("Coopet 通知交给 MaiBot：%s", notice.source)
+        return await self._route(notice.id, lambda now: notice_to_inbound(
+            notice,
+            account_id=identity.bot_account_id,
+            user_id=identity.owner_user_id,
+            user_nickname=identity.owner_nickname,
+            now=now,
+        ))
+
+    async def _route(self, message_id: str, build: Callable[[float], Dict[str, Any]]) -> ChatResult:
+        """经消息网关交给 MaiBot；用客户端的 id 去重。"""
+        if not self._ready:
+            return (p.ERR_NOT_READY, "插件的消息网关还没就绪")
+        message = build(time.time())
         try:
             accepted = await self.ctx.gateway.route_message(
-                GATEWAY_NAME, message, external_message_id=chat.id, dedupe_key=chat.id,
+                GATEWAY_NAME, message, external_message_id=message_id, dedupe_key=message_id,
             )
         except Exception as exc:  # 宿主拒绝时 SDK 会抛错，原样作为说明回给桌宠
             self.ctx.logger.warning("Coopet 消息没能交给 MaiBot：%s", exc)
