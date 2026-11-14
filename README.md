@@ -22,8 +22,9 @@ Coopet 是一个 Mac / Windows 的桌宠客户端。它基于 [Coopanion](https:
   [ThermalEng/coopanion-agent-notify-world](https://github.com/ThermalEng/coopanion-agent-notify-world)）：
   Claude Code、Codex 等跑完一轮任务后，桌宠会告诉你；还内置 [ntfy 通知](https://github.com/wtxdew/cortico-world-ntfy)。
   World 扩展就是一个 npm 包，可以自己写，Coopet 用 Cortico 的契约加载和托管它。
-- **通知可以交给麦麦**（插件 0.2.0 起）：扩展的通知设成「交给麦麦」时，桌宠把它转给 MaiBot，作为一条通知消息
-  （`[事件-通知] …`），由麦麦决定要不要说、怎么说，回复照常显示在桌宠气泡里。
+- **通知可以交给麦麦**（插件 0.2.0 起，0.2.1 改成主动任务）：扩展的通知设成「交给麦麦」时，桌宠把它转给 MaiBot，
+  作为一个主动任务写明「电脑上收到一条外部通知」，由麦麦决定要不要转告你、怎么说；转告时会说清从哪来、发生了什么，
+  整段发不分句，回复照常显示在桌宠气泡里。
 - **以后**：本地 Agent（对麦麦说"帮我打开某某"，由电脑上的 Agent 执行）、电脑操作等，
   见 Coopet 的 [ROADMAP](https://github.com/wtxdew/coopet-maibot/blob/master/docs/ROADMAP.md)。
 
@@ -54,7 +55,8 @@ Coopet 是一个 Mac / Windows 的桌宠客户端。它基于 [Coopanion](https:
    Windows / macOS 直接部署不用做这一步。
 3. 在 MaiBot WebUI 的插件页打开本插件设置：
    - 「连接」：填一个 token（桌宠客户端要填同一个）；端口按需修改；
-   - 「身份」：主人的 user_id 和称呼（麦麦怎么称呼你）；
+   - 「身份」：主人的 user_id 和称呼（麦麦怎么称呼你；转告通知时也用这个称呼）；
+   - 「回复」：麦麦在 Coopet 里的回复要不要分句。默认只有转告通知的那次整段发（`notice`），也可以全部整段（`all`）或照全局设置（`off`）；
    - 「插件」：打开启用。
 4. 在 Coopet 的设置窗「开始 → 连接 MaiBot」里填地址 `ws://<MaiBot 所在主机>:18100/ws` 和同一个 token，点「保存并连接」。
 
