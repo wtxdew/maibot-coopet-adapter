@@ -18,6 +18,6 @@
   "dependencies": [
     {"type": "python_package", "name": "aiohttp", "version_spec": ">=3.14,<4"}
   ],
-  "capabilities": ["chat.get_all_streams", "config.get", "gateway.route_message", "gateway.update_state"],
+  "capabilities": ["chat.get_all_streams", "config.get", "gateway.route_message", "gateway.update_state", "maisaka.proactive.trigger"],
   "i18n": {"default_locale": "zh-CN", "supported_locales": ["zh-CN"]}
 }

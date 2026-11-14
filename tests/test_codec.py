@@ -35,11 +35,19 @@ def test_notice_to_inbound_is_a_notify_message_from_the_owner():
     assert m["is_notify"] is True
     assert m["message_id"] == "n1" and m["platform"] == "coopet" and m["scope"] is None
     assert m["message_info"]["user_info"] == {"user_id": "owner", "user_nickname": "主人"}
-    assert m["raw_message"] == [{"type": "text", "data": "[事件-通知] ntfy · build：CI：构建完成"}]
+    assert m["raw_message"] == [{"type": "text", "data": "[事件-通知] 主人电脑上的 Coopet 收到一条外部推送（不是主人说的）—— ntfy · build：CI：构建完成"}]
 
 
 def test_notice_text_without_title():
-    assert codec.notice_text(Notice(id="n1", source="Agent 通知", text="Claude Code 跑完了")) == "[事件-通知] Agent 通知：Claude Code 跑完了"
+    assert codec.notice_text(Notice(id="n1", source="Agent 通知", text="Claude Code 跑完了"), "主人").endswith("—— Agent 通知：Claude Code 跑完了")
+
+
+def test_notice_intent_says_it_is_not_the_owner_speaking():
+    intent = codec.notice_intent(Notice(id="n1", source="ntfy · build", title="CI", text="构建完成"), "主人")
+    assert "不是主人发来的消息" in intent
+    assert "来源「ntfy · build」，标题「CI」，内容「构建完成」" in intent
+    assert "说清这是哪里来的通知、发生了什么" in intent
+    assert "标题「" not in codec.notice_intent(Notice(id="n1", source="s", text="t"), "主人")
 
 
 def test_outbound_to_reply_maps_segments():

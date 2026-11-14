@@ -22,17 +22,28 @@ def chat_to_inbound(chat: Chat, *, account_id: str, user_id: str, user_nickname:
     return _private_text(chat.id, chat.text, account_id=account_id, user_id=user_id, user_nickname=user_nickname, now=now)
 
 
-def notice_text(notice: Notice) -> str:
-    """通知的正文：照 MaiBot 通知消息的写法以「[事件-…]」开头（自带的 Telegram 适配器也这样写），
-    后面是来源、标题（有的话）和内容。"""
+def notice_intent(notice: Notice, owner: str) -> str:
+    """交给 Maisaka 主动任务的意图：写明这是电脑上收到的外部通知、不是主人说的话；转告时要说清从哪来、发生了什么，
+    不然通知就没用了。`owner` 是麦麦对主人的称呼（插件设置）。"""
+    title = f"，标题「{notice.title}」" if notice.title else ""
+    return (
+        f"{owner}电脑上的 Coopet 收到一条外部通知（不是{owner}发来的消息）：来源「{notice.source}」{title}，内容「{notice.text}」。"
+        f"如果{owner}可能需要知道，就转告他：一定要说清这是哪里来的通知、发生了什么（保留原文里的名称、项目、"
+        "结果这些关键词，不要只说个大概），说清之后可以加一句你自己的看法；不重要就不用说。"
+    )
+
+
+def notice_text(notice: Notice, owner: str) -> str:
+    """退回成通知消息时的正文：照 MaiBot 通知消息的写法以「[事件-…]」开头（自带的 Telegram 适配器也这样写），
+    用第三人称写明这是外部推送。消息的发送者只能是主人，planner 会在前面加上主人的名字，所以要说清不是主人说的。"""
     head = f"{notice.source}：{notice.title}" if notice.title else notice.source
-    return f"[事件-通知] {head}：{notice.text}"
+    return f"[事件-通知] {owner}电脑上的 Coopet 收到一条外部推送（不是{owner}说的）—— {head}：{notice.text}"
 
 
 def notice_to_inbound(notice: Notice, *, account_id: str, user_id: str, user_nickname: str, now: float) -> Dict[str, Any]:
     """桌宠转来的通知：主人私聊里的一条**通知消息**（is_notify）。MaiBot 照常交给 planner，由她决定要不要回；
     恢复上下文时会跳过通知消息，所以不会占着聊天记录。message_id 用客户端给的 notice.id。"""
-    message = _private_text(notice.id, notice_text(notice), account_id=account_id, user_id=user_id, user_nickname=user_nickname, now=now)
+    message = _private_text(notice.id, notice_text(notice, user_nickname), account_id=account_id, user_id=user_id, user_nickname=user_nickname, now=now)
     message["is_notify"] = True
     return message
 
