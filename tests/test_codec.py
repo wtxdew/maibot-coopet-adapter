@@ -3,7 +3,7 @@ import base64
 import pytest
 
 from coopet_adapter import codec
-from coopet_adapter.protocol import Chat
+from coopet_adapter.protocol import Chat, Notice
 
 
 def b64(data: bytes) -> str:
@@ -26,6 +26,20 @@ def test_chat_to_inbound_has_the_fields_maibot_requires():
     assert "group_info" not in m["message_info"]
     assert m["raw_message"] == [{"type": "text", "data": "你好"}]
     assert all(m[k] is False for k in ("is_at", "is_mentioned", "is_picture", "is_emoji", "is_command"))
+    assert "is_notify" not in m
+
+
+def test_notice_to_inbound_is_a_notify_message_from_the_owner():
+    m = codec.notice_to_inbound(Notice(id="n1", source="ntfy · build", title="CI", text="构建完成"),
+                                account_id="coopet-maibot", user_id="owner", user_nickname="主人", now=1.5)
+    assert m["is_notify"] is True
+    assert m["message_id"] == "n1" and m["platform"] == "coopet" and m["scope"] is None
+    assert m["message_info"]["user_info"] == {"user_id": "owner", "user_nickname": "主人"}
+    assert m["raw_message"] == [{"type": "text", "data": "[事件-通知] ntfy · build：CI：构建完成"}]
+
+
+def test_notice_text_without_title():
+    assert codec.notice_text(Notice(id="n1", source="Agent 通知", text="Claude Code 跑完了")) == "[事件-通知] Agent 通知：Claude Code 跑完了"
 
 
 def test_outbound_to_reply_maps_segments():
