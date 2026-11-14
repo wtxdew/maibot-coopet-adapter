@@ -4,7 +4,8 @@
 1. 等第一帧，必须是 hello（超时、二进制帧、不是 hello → 4000）；
 2. 比对协议版本（→ 4002）和 token（→ 4001）；
 3. 顶替已有的设备（旧连接收到 error replaced 后以 4003 关闭）；
-4. 回 welcome，之后逐帧处理：chat → on_chat 回调 → ack；不认识的 type 忽略。
+4. 回 welcome，之后逐帧处理：chat → on_chat 回调 → ack；notice → on_notice 回调 → ack（给了 on_notice 才有，
+   welcome.features 里写着 notice）；不认识的 type 忽略。
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from . import protocol as p
 # chat 的处理结果：None 表示 MaiBot 收下了；否则是 (错误码, 说明)
 ChatResult = Optional[Tuple[str, str]]
 OnChat = Callable[[p.Chat], Awaitable[ChatResult]]
+OnNotice = Callable[[p.Notice], Awaitable[ChatResult]]
 # 返回 protocol.welcome() 的关键字参数：bot_name、bot_account_id、user_id、user_nickname
 WelcomeInfo = Callable[[], Awaitable[Dict[str, str]]]
 
@@ -37,6 +39,7 @@ class CoopetServer:
         on_chat: OnChat,
         welcome_info: WelcomeInfo,
         logger: logging.Logger,
+        on_notice: Optional[OnNotice] = None,
         hello_timeout: float = p.HELLO_TIMEOUT_SEC,
         max_frame_bytes: int = p.MAX_FRAME_BYTES,
     ) -> None:
@@ -47,6 +50,7 @@ class CoopetServer:
         self._token = token
         self._on_chat = on_chat
         self._welcome_info = welcome_info
+        self._on_notice = on_notice
         self._log = logger
         self._hello_timeout = hello_timeout
         self._max_frame_bytes = max_frame_bytes
@@ -113,7 +117,8 @@ class CoopetServer:
             self._log.info("新设备 %s 顶替了旧连接", hello.device_name)
             await self._fail(previous, p.ERR_REPLACED, "已被新设备顶替", p.CLOSE_REPLACED)
 
-        await ws.send_str(p.encode(p.welcome(**await self._welcome_info())))
+        features = [p.FEATURE_NOTICE] if self._on_notice else []
+        await ws.send_str(p.encode(p.welcome(**await self._welcome_info(), features=features)))
         self._log.info("桌宠已连上：%s（%s，%s %s）", hello.device_name, peer, hello.client_name, hello.client_version)
 
         try:
@@ -167,6 +172,11 @@ class CoopetServer:
                 chat = p.parse_chat(obj)
                 result = await self._on_chat(chat)
                 frame = p.ack_ok(chat.id) if result is None else p.ack_error(chat.id, *result)
+                await ws.send_str(p.encode(frame))
+            elif kind == "notice" and self._on_notice:
+                notice = p.parse_notice(obj)
+                result = await self._on_notice(notice)
+                frame = p.ack_ok(notice.id) if result is None else p.ack_error(notice.id, *result)
                 await ws.send_str(p.encode(frame))
             else:
                 self._log.debug("忽略不认识的消息类型：%s", kind)

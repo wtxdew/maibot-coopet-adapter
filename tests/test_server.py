@@ -20,13 +20,21 @@ def hello(**over):
 
 
 class Harness:
-    def __init__(self, result=None, **server_kw):
+    def __init__(self, result=None, notices=False, **server_kw):
         self.chats = []
+        self.notices = []
         self.result = result
 
         async def on_chat(chat):
             self.chats.append(chat)
             return self.result
+
+        async def on_notice(notice):
+            self.notices.append(notice)
+            return self.result
+
+        if notices:
+            server_kw["on_notice"] = on_notice
 
         async def welcome_info():
             return WELCOME
@@ -96,6 +104,28 @@ async def test_chat_is_acked_when_accepted():
         await ws.send_str(json.dumps({"type": "chat", "id": "c1", "text": " 你好 "}))
         assert await recv_json(ws) == p.ack_ok("c1")
         assert h.chats == [p.Chat(id="c1", text="你好")]
+
+
+async def test_notice_is_offered_and_acked():
+    async with Harness(notices=True) as h:
+        ws = await h.connect(hello())
+        assert (await recv_json(ws))["features"] == ["notice"]
+        await ws.send_str(json.dumps({"type": "notice", "id": "n1", "source": "ntfy", "text": "构建完成"}))
+        assert await recv_json(ws) == p.ack_ok("n1")
+        assert h.notices == [p.Notice(id="n1", source="ntfy", text="构建完成")]
+        await ws.send_str(json.dumps({"type": "notice", "id": "n2", "source": "ntfy", "text": ""}))
+        ack = await recv_json(ws)
+        assert ack["id"] == "n2" and ack["ok"] is False and ack["error"]["code"] == p.ERR_INVALID
+
+
+async def test_notice_is_ignored_without_a_handler():
+    async with Harness() as h:
+        ws = await h.connect(hello())
+        assert (await recv_json(ws))["features"] == []
+        await ws.send_str(json.dumps({"type": "notice", "id": "n1", "source": "ntfy", "text": "构建完成"}))
+        # ignored like any unknown type: the next chat's ack is the next frame
+        await ws.send_str(json.dumps({"type": "chat", "id": "c1", "text": "hi"}))
+        assert await recv_json(ws) == p.ack_ok("c1")
 
 
 async def test_chat_is_acked_with_error_when_rejected():
