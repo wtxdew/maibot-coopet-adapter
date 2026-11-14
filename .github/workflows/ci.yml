@@ -1,0 +1,26 @@
+# 检查：每个 PR 和合进 master 的提交跑一遍测试（Python 3.13，依赖版本和 MaiBot 1.4.3 容器里的一致，见 pyproject.toml）。
+# master 的保护规则要求它通过才能合并 PR。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install dependencies
+        run: uv sync --python 3.13 --frozen
+      - name: Test
+        run: uv run pytest -q
