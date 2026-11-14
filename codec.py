@@ -1,6 +1,6 @@
 """客户端消息与 MaiBot 网关消息之间的格式转换。纯函数，不依赖网络和 SDK。
 
-- 入站：协议的 `chat` → `ctx.gateway.route_message` 要的消息字典
+- 入站：协议的 `chat`、`notice` → `ctx.gateway.route_message` 要的消息字典
   （必填字段见 MaiBot src/plugin_runtime/host/message_utils.py `_build_session_message_from_dict`）。
 - 出站：网关交给插件的消息字典（`raw_message` 是段的列表）→ 协议的 `reply`。
   图片、表情包段的字节在 `binary_data_base64`，`data` 是描述文字。
@@ -12,24 +12,43 @@ import base64
 import binascii
 from typing import Any, Dict, List, Mapping, Optional
 
-from .protocol import Chat, reply
+from .protocol import Chat, Notice, reply
 
 PLATFORM = "coopet"
 
 
 def chat_to_inbound(chat: Chat, *, account_id: str, user_id: str, user_nickname: str, now: float) -> Dict[str, Any]:
     """主人在 coopet 平台的一条私聊文字消息。message_id 用客户端给的 chat.id。"""
+    return _private_text(chat.id, chat.text, account_id=account_id, user_id=user_id, user_nickname=user_nickname, now=now)
+
+
+def notice_text(notice: Notice) -> str:
+    """通知的正文：照 MaiBot 通知消息的写法以「[事件-…]」开头（自带的 Telegram 适配器也这样写），
+    后面是来源、标题（有的话）和内容。"""
+    head = f"{notice.source}：{notice.title}" if notice.title else notice.source
+    return f"[事件-通知] {head}：{notice.text}"
+
+
+def notice_to_inbound(notice: Notice, *, account_id: str, user_id: str, user_nickname: str, now: float) -> Dict[str, Any]:
+    """桌宠转来的通知：主人私聊里的一条**通知消息**（is_notify）。MaiBot 照常交给 planner，由她决定要不要回；
+    恢复上下文时会跳过通知消息，所以不会占着聊天记录。message_id 用客户端给的 notice.id。"""
+    message = _private_text(notice.id, notice_text(notice), account_id=account_id, user_id=user_id, user_nickname=user_nickname, now=now)
+    message["is_notify"] = True
+    return message
+
+
+def _private_text(message_id: str, text: str, *, account_id: str, user_id: str, user_nickname: str, now: float) -> Dict[str, Any]:
     return {
         "platform": PLATFORM,
         "account_id": account_id,
         "scope": None,
-        "message_id": chat.id,
+        "message_id": message_id,
         "timestamp": str(now),
         "message_info": {
             "user_info": {"user_id": user_id, "user_nickname": user_nickname},
             "additional_config": {},
         },
-        "raw_message": [{"type": "text", "data": chat.text}],
+        "raw_message": [{"type": "text", "data": text}],
         "is_at": False,
         "is_mentioned": False,
         "is_picture": False,
