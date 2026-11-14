@@ -54,6 +54,21 @@ class FakeChat:
         return [s for s in self.streams if s["platform"] == platform]
 
 
+class FakeMaisaka:
+    """ctx.maisaka：只用到 proactive.trigger；result 是宿主的回答，或要抛出的异常"""
+
+    def __init__(self, result=None):
+        self.result = {"success": True, "task_id": "t1"} if result is None else result
+        self.triggered = []
+        self.proactive = self
+
+    async def trigger(self, stream_id, intent, *, reason="", priority="", metadata=None, **kwargs):
+        self.triggered.append({"stream_id": stream_id, "intent": intent, "reason": reason, "metadata": metadata})
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
 class FakeConfig:
     def __init__(self, nickname):
         self.nickname = nickname
@@ -65,13 +80,14 @@ class FakeConfig:
 OWNER_STREAM = {"session_id": "s-owner", "platform": "coopet", "account_id": "coopet-maibot", "user_id": "owner", "is_group_session": False, "scope": None}
 
 
-def make_plugin(*, enabled=True, token=TOKEN, gateway=None, streams=(OWNER_STREAM,), nickname="麦麦"):
+def make_plugin(*, enabled=True, token=TOKEN, gateway=None, streams=(OWNER_STREAM,), nickname="麦麦", maisaka=None):
     plugin = plugin_mod.create_plugin()
     ctx = SimpleNamespace(
         logger=logging.getLogger("coopet-test"),
         gateway=gateway or FakeGateway(),
         chat=FakeChat(list(streams)),
         config=FakeConfig(nickname),
+        maisaka=maisaka or FakeMaisaka(),
     )
     plugin._set_context(ctx)
     port = free_port()
@@ -156,8 +172,28 @@ async def test_chat_is_routed_as_owner_private_message():
         await plugin.on_unload()
 
 
-async def test_notice_is_routed_as_a_notify_message():
+async def test_notice_is_a_proactive_task_in_the_owner_chat():
     plugin, ctx, port = make_plugin()
+    await plugin.on_load()
+    try:
+        async with Client(port) as c:
+            assert await c.notice("n1", "ntfy · build", "构建完成", title="CI") == p.ack_ok("n1")
+        [task] = ctx.maisaka.triggered
+        assert task["stream_id"] == "s-owner" and task["reason"] == "Coopet 通知"
+        assert "不是主人发来的消息" in task["intent"] and "内容「构建完成」" in task["intent"]
+        assert task["metadata"] == {"source": "ntfy · build", "notice_id": "n1"}
+        assert ctx.gateway.routed == []
+    finally:
+        await plugin.on_unload()
+
+
+@pytest.mark.parametrize("streams,maisaka", [
+    ((), None),  # the owner never talked on coopet: no chat to put a task into
+    ((OWNER_STREAM,), FakeMaisaka(result={"success": False, "error": "policy"})),
+    ((OWNER_STREAM,), FakeMaisaka(result=RuntimeError("宿主不支持"))),
+])
+async def test_notice_falls_back_to_a_notify_message(streams, maisaka):
+    plugin, ctx, port = make_plugin(streams=streams, maisaka=maisaka)
     await plugin.on_load()
     try:
         async with Client(port) as c:
@@ -166,13 +202,13 @@ async def test_notice_is_routed_as_a_notify_message():
         assert (name, ext_id, dedupe) == ("coopet_gateway", "n1", "n1")
         assert message["is_notify"] is True
         assert message["message_info"]["user_info"] == {"user_id": "owner", "user_nickname": "主人"}
-        assert message["raw_message"] == [{"type": "text", "data": "[事件-通知] ntfy · build：CI：构建完成"}]
+        assert "不是主人说的" in message["raw_message"][0]["data"]
     finally:
         await plugin.on_unload()
 
 
 async def test_notice_failures_are_acked():
-    plugin, _, port = make_plugin(gateway=FakeGateway(route_result=False))
+    plugin, _, port = make_plugin(gateway=FakeGateway(route_result=False), streams=())
     await plugin.on_load()
     try:
         async with Client(port) as c:

@@ -17,7 +17,7 @@ from maibot_sdk import HookHandler, MaiBotPlugin, MessageGateway, PluginConfigBa
 from maibot_sdk.types import HookMode
 
 from . import protocol as p
-from .codec import PLATFORM, chat_to_inbound, notice_to_inbound, outbound_target_user, outbound_to_reply
+from .codec import PLATFORM, chat_to_inbound, notice_intent, notice_to_inbound, outbound_target_user, outbound_to_reply
 from .server import ChatResult, CoopetServer
 from .settings import AdapterSettings
 
@@ -123,9 +123,28 @@ class CoopetAdapterPlugin(MaiBotPlugin):
         ))
 
     async def _on_notice(self, notice: p.Notice) -> ChatResult:
-        """桌宠转来的通知（路由设成「麦麦」的扩展通知）：作为主人私聊里的通知消息交给 MaiBot，由她决定要不要回。"""
+        """桌宠转来的通知（路由设成「麦麦」的扩展通知），由麦麦决定要不要转告主人。
+
+        先作为 Maisaka 的主动任务交给主人的 coopet 私聊：上下文里是一条内部任务（不是主人说的话），并立刻处理一轮。
+        还没有这个私聊（主人从没在 coopet 上说过话）或主动任务失败时，退回成主人私聊里的通知消息。
+        """
+        if not self._ready:
+            return (p.ERR_NOT_READY, "插件的消息网关还没就绪")
+        session_id = await self._owner_session_id()
+        if session_id:
+            try:
+                result = await self.ctx.maisaka.proactive.trigger(
+                    session_id, notice_intent(notice, self.config.identity.owner_nickname), reason="Coopet 通知",
+                    metadata={"source": notice.source, "notice_id": notice.id},
+                )
+                if isinstance(result, dict) and result.get("success") is False:
+                    raise RuntimeError(str(result.get("error") or "宿主没有接受"))
+                self.ctx.logger.info("Coopet 通知作为主动任务交给 MaiBot：%s", notice.source)
+                return None
+            except Exception as exc:
+                self.ctx.logger.warning("Coopet 通知没能作为主动任务交给 MaiBot（%s），改成通知消息", exc)
         identity = self.config.identity
-        self.ctx.logger.info("Coopet 通知交给 MaiBot：%s", notice.source)
+        self.ctx.logger.info("Coopet 通知作为通知消息交给 MaiBot：%s", notice.source)
         return await self._route(notice.id, lambda now: notice_to_inbound(
             notice,
             account_id=identity.bot_account_id,
@@ -235,13 +254,17 @@ class CoopetAdapterPlugin(MaiBotPlugin):
         """这个会话是不是主人在 coopet 平台的私聊；找到后记住它的 session_id。"""
         if not session_id or self._server is None:
             return False
+        return session_id == await self._owner_session_id()
+
+    async def _owner_session_id(self) -> Optional[str]:
+        """主人在 coopet 平台的私聊的 session_id；还没有（主人没在 coopet 上说过话）时为 None。找到后记住。"""
         if self._owner_session is not None:
-            return session_id == self._owner_session
+            return self._owner_session
         try:
             streams = await self.ctx.chat.get_all_streams(platform=PLATFORM)
         except Exception as exc:
             self.ctx.logger.warning("查询 coopet 聊天流失败：%s", exc)
-            return False
+            return None
         if isinstance(streams, dict):  # 宿主信封没被解包时：{"success": ..., "streams": [...]}
             streams = streams.get("streams")
         identity = self.config.identity
@@ -256,7 +279,7 @@ class CoopetAdapterPlugin(MaiBotPlugin):
             ):
                 self._owner_session = str(stream.get("session_id"))
                 break
-        return session_id == self._owner_session
+        return self._owner_session
 
     async def _set_thinking(self, on: bool) -> None:
         self._cancel_thinking_timer()
